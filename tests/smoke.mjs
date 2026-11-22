@@ -105,7 +105,9 @@ const dictResponse = await new Promise((resolve) => {
 assert.equal(dictResponse.status, 200);
 const dict = JSON.parse(dictResponse.body);
 assert.ok(dict.tools && Object.keys(dict.tools).length > 10, '中文注释表应有条目');
-assert.equal(typeof dict.plugins['dsh-image-gen'], 'string');
+assert.equal(typeof dict.tools.generate_image, 'string', '工具条目应为一句话说明');
+assert.equal(typeof dict.plugins['dsh-image-gen'].intro, 'string', '插件条目应带 3 行简介');
+assert.equal(dict.plugins['dsh-image-gen'].name, '图像生成');
 
 os.homedir = originalHome;
 fs.rmSync(tmp, { recursive: true, force: true });
