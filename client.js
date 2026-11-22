@@ -13,7 +13,9 @@
 (() => {
   const ID = 'dsh-trigger-prompts';
   const LIST_ROUTE = '/plugins/dsh-trigger-prompts/list';
+  const DICT_ROUTE = '/plugins/dsh-trigger-prompts/zh-cn.json';
   const LS_PIN = 'dsh-trigger-prompts:pinned';
+  const LS_LANG = 'dsh-trigger-prompts:lang';
   const STALE_MS = 15 * 1000;
 
   window.__ModuleLoader__.load({
@@ -31,6 +33,8 @@
         loading: false,
         error: null,
         payload: null,
+        dict: null,
+        lang: 'zh',
         fetchedAt: 0,
         query: '',
       };
@@ -42,6 +46,7 @@
       let searchEl = null;
       let pinBtn = null;
       let refreshBtn = null;
+      let langBtn = null;
       let positionRaf = 0;
       let observer = null;
       let timer = 0;
@@ -129,6 +134,28 @@
           overflow: hidden; white-space: pre-wrap; word-break: break-word; cursor: pointer;
         }
         .dsh-tp-desc.expanded { -webkit-line-clamp: unset; display: block; }
+        .dsh-tp-zh {
+          margin-top: 6px; font-size: 12.5px; line-height: 1.6; opacity: .95;
+          white-space: pre-wrap; word-break: break-word;
+        }
+        .dsh-tp-orig-toggle {
+          margin-top: 6px; font-size: 11px; opacity: .55; cursor: pointer; user-select: none;
+          display: inline-block;
+        }
+        .dsh-tp-orig-toggle:hover { opacity: .9; }
+        .dsh-tp-desc-orig {
+          margin-top: 3px; font-size: 11.5px; line-height: 1.45; opacity: .55;
+          display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+          overflow: hidden; white-space: pre-wrap; word-break: break-word; cursor: pointer;
+        }
+        .dsh-tp-desc-orig.expanded { -webkit-line-clamp: unset; display: block; opacity: .8; }
+        .dsh-tp-zhplugin { font-size: 11px; opacity: .9; font-weight: 500; }
+        .dsh-tp-langbtn {
+          border: 1px solid color-mix(in srgb, CanvasText 22%, transparent);
+          background: transparent; color: inherit; font: inherit; font-size: 11px;
+          height: 22px; padding: 0 7px; border-radius: 6px; cursor: pointer; opacity: .75;
+        }
+        .dsh-tp-langbtn:hover { opacity: 1; background: color-mix(in srgb, CanvasText 10%, transparent); }
         .dsh-tp-empty { padding: 18px 10px; text-align: center; opacity: .6; font-size: 12px; }
         .dsh-tp-foot {
           padding: 7px 12px; font-size: 11px; opacity: .55;
@@ -199,6 +226,15 @@
           setPinned(!state.pinned);
         });
 
+        langBtn = document.createElement('button');
+        langBtn.type = 'button';
+        langBtn.className = 'dsh-tp-langbtn';
+        langBtn.title = '切换：中文注释 / 英文原文';
+        langBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          setLang(state.lang === 'zh' ? 'en' : 'zh');
+        });
+
         refreshBtn = document.createElement('button');
         refreshBtn.type = 'button';
         refreshBtn.className = 'dsh-tp-iconbtn';
@@ -222,7 +258,7 @@
           close();
         });
 
-        head.append(title, countEl, spacer, pinBtn, refreshBtn, closeBtn);
+        head.append(title, countEl, spacer, langBtn, pinBtn, refreshBtn, closeBtn);
 
         searchEl = document.createElement('input');
         searchEl.className = 'dsh-tp-search';
@@ -264,6 +300,26 @@
         if (!pinBtn) return;
         pinBtn.setAttribute('aria-pressed', state.pinned ? 'true' : 'false');
         pinBtn.title = state.pinned ? '已置顶：点击取消置顶' : '置顶：保持打开，与其它界面交互也不关闭';
+      }
+
+      function setLang(next) {
+        state.lang = next === 'en' ? 'en' : 'zh';
+        try {
+          localStorage.setItem(LS_LANG, state.lang);
+        } catch {
+          /* 忽略隐私模式 */
+        }
+        applyLangUI();
+        renderList();
+        schedulePosition();
+      }
+
+      function applyLangUI() {
+        if (!langBtn) return;
+        langBtn.textContent = state.lang === 'zh' ? '中' : 'EN';
+        langBtn.title = state.lang === 'zh'
+          ? '当前显示中文注释，点击切换为英文原文'
+          : '当前显示英文原文，点击切换为中文注释';
       }
 
       function positionPanel() {
@@ -332,15 +388,29 @@
         state.loading = true;
         renderList();
         try {
-          const response = await fetch(LIST_ROUTE, {
-            headers: { accept: 'application/json' },
-            credentials: 'same-origin',
-            cache: 'no-store',
-          });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const payload = await response.json();
+          const [listResponse, dictResponse] = await Promise.all([
+            fetch(LIST_ROUTE, {
+              headers: { accept: 'application/json' },
+              credentials: 'same-origin',
+              cache: 'no-store',
+            }),
+            fetch(DICT_ROUTE, {
+              headers: { accept: 'application/json' },
+              credentials: 'same-origin',
+              cache: 'no-store',
+            }).catch(() => null),
+          ]);
+          if (!listResponse.ok) throw new Error(`HTTP ${listResponse.status}`);
+          const payload = await listResponse.json();
           if (!payload || payload.ok !== true) throw new Error(payload?.error || 'bad payload');
           state.payload = payload;
+          if (dictResponse && dictResponse.ok) {
+            try {
+              state.dict = await dictResponse.json();
+            } catch {
+              /* 词典坏了不影响主功能 */
+            }
+          }
           state.error = null;
           state.fetchedAt = Date.now();
         } catch (error) {
@@ -454,7 +524,15 @@
           strong.textContent = groupLabel(key, pluginsById);
           const span = document.createElement('span');
           span.textContent = `${tools.length} 个工具`;
-          head.append(strong, span);
+          const zhPlugin = state.dict?.plugins?.[key];
+          if (zhPlugin) {
+            const zhSpan = document.createElement('span');
+            zhSpan.className = 'dsh-tp-zhplugin';
+            zhSpan.textContent = `· ${zhPlugin}`;
+            head.append(strong, zhSpan, span);
+          } else {
+            head.append(strong, span);
+          }
 
           // 内置 / MCP 这类大组默认折叠，避免几十上百条淹没插件工具
           const foldable = rank(key) > 0 && tools.length > 12 && !state.query;
@@ -493,6 +571,7 @@
         copy.type = 'button';
         copy.className = 'dsh-tp-copy';
         copy.textContent = '复制';
+        copy.title = '复制模型看到的原始描述（英文原文）';
         copy.addEventListener('click', async (event) => {
           event.stopPropagation();
           await copyText(tool.description || tool.name);
@@ -506,13 +585,37 @@
 
         head.append(name, copy);
 
-        const desc = document.createElement('div');
-        desc.className = 'dsh-tp-desc';
-        desc.textContent = tool.description || '（该工具没有描述）';
-        desc.title = '点击展开 / 收起全文';
-        desc.addEventListener('click', () => desc.classList.toggle('expanded'));
+        const zh = state.lang === 'zh' ? state.dict?.tools?.[tool.name] : null;
+        if (zh) {
+          const zhEl = document.createElement('div');
+          zhEl.className = 'dsh-tp-zh';
+          zhEl.textContent = zh;
 
-        item.append(head, desc);
+          const origHead = document.createElement('div');
+          origHead.className = 'dsh-tp-orig-toggle';
+          origHead.textContent = '原文 ▸';
+
+          const desc = document.createElement('div');
+          desc.className = 'dsh-tp-desc dsh-tp-desc-orig';
+          desc.textContent = tool.description || '（该工具没有描述）';
+          desc.title = '模型看到的原始描述（点击展开 / 收起）';
+
+          const toggle = () => {
+            const expanded = desc.classList.toggle('expanded');
+            origHead.textContent = expanded ? '原文 ▾' : '原文 ▸';
+          };
+          origHead.addEventListener('click', toggle);
+          desc.addEventListener('click', toggle);
+
+          item.append(head, zhEl, origHead, desc);
+        } else {
+          const desc = document.createElement('div');
+          desc.className = 'dsh-tp-desc';
+          desc.textContent = tool.description || '（该工具没有描述）';
+          desc.title = '点击展开 / 收起全文';
+          desc.addEventListener('click', () => desc.classList.toggle('expanded'));
+          item.append(desc);
+        }
         return item;
       }
 
@@ -539,10 +642,13 @@
         ensurePanel();
         try {
           state.pinned = localStorage.getItem(LS_PIN) === '1';
+          state.lang = localStorage.getItem(LS_LANG) === 'en' ? 'en' : 'zh';
         } catch {
           state.pinned = false;
+          state.lang = 'zh';
         }
         applyPinnedUI();
+        applyLangUI();
 
         document.addEventListener('pointerdown', onOutsidePointer, true);
         document.addEventListener('keydown', onKeyDown, true);

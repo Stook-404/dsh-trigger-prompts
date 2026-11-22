@@ -1,7 +1,7 @@
 {
   "name": "dsh-trigger-prompts",
-  "version": "0.1.0",
-  "description": "DSH 插件：把各已装插件注册给 Agent 的工具描述（触发提示词）汇总成一个面板，可搜索、可一键复制，入口在「对话 / 轨迹 / 画廊」右侧。",
+  "version": "0.2.0",
+  "description": "DSH 插件：把各已装插件注册给 Agent 的工具描述（触发提示词）汇总成一个中文面板，可搜索、可一键复制、可置顶，入口在「对话 / 轨迹 / 画廊」右侧。",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -19,6 +19,7 @@
   },
   "files": [
     "lib",
+    "data",
     "client.js",
     "cordis.patch.yml",
     "README.md",

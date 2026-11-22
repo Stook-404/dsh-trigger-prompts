@@ -1,5 +1,5 @@
 /**
- * 冒烟测试：不启动 DSH，直接构造一个假 ctx 跑通「汇总 + 归属 + HTTP 响应」。
+ * 冒烟测试：不启动 DSH，直接构造一个假 ctx 跑通「汇总 + 归属 + 两个 HTTP 接口」。
  *   node tests/smoke.mjs
  */
 import assert from 'node:assert/strict';
@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import plugin, { LIST_ROUTE, buildPayload } from '../lib/index.js';
+import plugin, { LIST_ROUTE, DICT_ROUTE, buildPayload } from '../lib/index.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-tp-'));
 const profileDir = path.join(tmp, 'profiles', 'testprofile');
@@ -27,12 +27,11 @@ fs.writeFileSync(
   path.join(profileDir, 'node_modules', 'fake-plugin', 'lib', 'index.js'),
   'export function apply(ctx) { ctx.tools.register({ name: "fake_paint", description: "画一只假鲸鱼" }); }\n',
 );
-process.env.DSH_PROFILE = 'testprofile';
-// 让 currentProfileDir() 指向临时目录：覆盖 homedir 不便，改为直接给 profileDir 传参不现实，
-// 所以这里把临时 profiles 根挂到 HOME 下的一种简单做法：用 DSH_HOME 覆盖不生效时跳过归属断言。
+
 const home = path.join(tmp, 'home');
 fs.mkdirSync(path.join(home, '.dsh', 'profiles'), { recursive: true });
 fs.cpSync(profileDir, path.join(home, '.dsh', 'profiles', 'testprofile'), { recursive: true });
+process.env.DSH_PROFILE = 'testprofile';
 const originalHome = os.homedir;
 os.homedir = () => home;
 
@@ -63,9 +62,11 @@ const ctx = {
 
 plugin.apply(ctx);
 
-assert.equal(registeredRoutes.length, 1, '应恰好注册一个路由');
-assert.equal(registeredRoutes[0].kind, 'exact');
-assert.equal(registeredRoutes[0].path, LIST_ROUTE);
+assert.equal(registeredRoutes.length, 2, '应注册工具清单与中文注释表两个路由');
+const listRoute = registeredRoutes.find((route) => route.path === LIST_ROUTE);
+const dictRoute = registeredRoutes.find((route) => route.path === DICT_ROUTE);
+assert.ok(listRoute && dictRoute, '两个路由都要注册');
+assert.equal(listRoute.kind, 'exact');
 
 const payload = buildPayload(fakeScope);
 assert.equal(payload.ok, true);
@@ -84,18 +85,34 @@ const response = await new Promise((resolve) => {
     end: (chunk) => resolve({ status, body: body + (chunk ?? '') }),
     setHeader: () => {},
   };
-  registeredRoutes[0].handler({ method: 'GET', url: LIST_ROUTE }, res);
+  listRoute.handler({ method: 'GET', url: LIST_ROUTE }, res);
 });
 
 assert.equal(response.status, 200);
 const parsed = JSON.parse(response.body);
 assert.equal(parsed.tools.length, 3);
 
+const dictResponse = await new Promise((resolve) => {
+  let status = 0;
+  let body = '';
+  const res = {
+    writeHead: (code) => { status = code; },
+    write: () => {},
+    end: (chunk) => resolve({ status, body: String(chunk ?? '') }),
+  };
+  dictRoute.handler({ method: 'GET', url: DICT_ROUTE }, res);
+});
+assert.equal(dictResponse.status, 200);
+const dict = JSON.parse(dictResponse.body);
+assert.ok(dict.tools && Object.keys(dict.tools).length > 10, '中文注释表应有条目');
+assert.equal(typeof dict.plugins['dsh-image-gen'], 'string');
+
 os.homedir = originalHome;
 fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log('smoke ok:', JSON.stringify({
-  route: LIST_ROUTE,
+  routes: registeredRoutes.map((route) => route.path),
   tools: parsed.tools.map((t) => `${t.name}@${t.plugin ?? 'builtin'}`),
   plugins: parsed.plugins.map((p) => `${p.id}#${p.count}`),
+  dictEntries: Object.keys(dict.tools).length,
 }, null, 2));
