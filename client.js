@@ -16,6 +16,7 @@
   const DICT_ROUTE = '/plugins/dsh-trigger-prompts/zh-cn.json';
   const LS_PIN = 'dsh-trigger-prompts:pinned';
   const LS_POS = 'dsh-trigger-prompts:pos';
+  const LS_ALL = 'dsh-trigger-prompts:showAll';
   const STALE_MS = 15 * 1000;
 
   window.__ModuleLoader__.load({
@@ -35,6 +36,7 @@
         payload: null,
         dict: null,
         pos: null,
+        showAll: false,
         fetchedAt: 0,
         query: '',
       };
@@ -45,6 +47,7 @@
       let countEl = null;
       let searchEl = null;
       let pinBtn = null;
+      let scopeBtn = null;
       let refreshBtn = null;
       let positionRaf = 0;
       let observer = null;
@@ -139,6 +142,28 @@
         .dsh-tp-panel.dragging, .dsh-tp-panel.dragging .dsh-tp-grip { cursor: grabbing; }
         .dsh-tp-panel.dragging { user-select: none; }
         .dsh-tp-empty { padding: 18px 10px; text-align: center; opacity: .6; font-size: 12px; }
+        .dsh-tp-scopebtn {
+          flex: none; height: 22px; padding: 0 8px; border-radius: 11px;
+          border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+          background: transparent; color: inherit; cursor: pointer;
+          font-size: 11px; opacity: .8; font-family: inherit; white-space: nowrap;
+        }
+        .dsh-tp-scopebtn:hover { opacity: 1; background: color-mix(in srgb, CanvasText 8%, transparent); }
+        .dsh-tp-scopebtn[aria-pressed="true"] {
+          opacity: 1; border-color: transparent;
+          background: color-mix(in srgb, #4d9fff 24%, transparent);
+        }
+        .dsh-tp-saywrap { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 2px 10px; align-items: center; }
+        .dsh-tp-saylabel { font-size: 11.5px; opacity: .75; }
+        .dsh-tp-saychip {
+          font-size: 12px; line-height: 1.5; padding: 3px 8px; border-radius: 999px;
+          cursor: pointer; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+          font-family: inherit; color: inherit;
+          background: color-mix(in srgb, #4d9fff 14%, transparent);
+          border: 1px solid color-mix(in srgb, #4d9fff 32%, transparent);
+        }
+        .dsh-tp-saychip:hover { background: color-mix(in srgb, #4d9fff 26%, transparent); }
+        .dsh-tp-saychip.done { background: color-mix(in srgb, #4caf50 30%, transparent); border-color: color-mix(in srgb, #4caf50 45%, transparent); }
       `;
 
       function injectStyles(doc) {
@@ -255,6 +280,15 @@
           grip.addEventListener('pointercancel', onUp);
         });
 
+        scopeBtn = document.createElement('button');
+        scopeBtn.type = 'button';
+        scopeBtn.className = 'dsh-tp-scopebtn';
+        scopeBtn.setAttribute('aria-pressed', 'false');
+        scopeBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          setShowAll(!state.showAll);
+        });
+
         pinBtn = document.createElement('button');
         pinBtn.type = 'button';
         pinBtn.className = 'dsh-tp-iconbtn';
@@ -290,7 +324,7 @@
           close();
         });
 
-        head.append(grip, title, countEl, spacer, pinBtn, refreshBtn, closeBtn);
+        head.append(grip, title, countEl, spacer, scopeBtn, pinBtn, refreshBtn, closeBtn);
 
         searchEl = document.createElement('input');
         searchEl.className = 'dsh-tp-search';
@@ -328,6 +362,27 @@
         if (!pinBtn) return;
         pinBtn.setAttribute('aria-pressed', state.pinned ? 'true' : 'false');
         pinBtn.title = state.pinned ? '已置顶：点击取消置顶' : '置顶：保持打开，与其它界面交互也不关闭';
+      }
+
+      function applyScopeUI() {
+        if (!scopeBtn) return;
+        scopeBtn.textContent = state.showAll ? '全部' : '仅插件';
+        scopeBtn.setAttribute('aria-pressed', state.showAll ? 'true' : 'false');
+        scopeBtn.title = state.showAll
+          ? '当前显示全部工具（含内置 / MCP）：点击只看自己装的插件'
+          : '当前只显示自己装的插件：点击也会列出内置 / MCP 外部工具';
+      }
+
+      function setShowAll(next) {
+        state.showAll = Boolean(next);
+        try {
+          localStorage.setItem(LS_ALL, state.showAll ? '1' : '0');
+        } catch {
+          /* 忽略隐私模式 */
+        }
+        applyScopeUI();
+        renderList();
+        schedulePosition();
       }
 
       function persistPos() {
@@ -453,6 +508,30 @@
         return haystack.includes(query.toLowerCase());
       }
 
+      async function copyText(text) {
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+          }
+        } catch {
+          /* 无权限时回退 */
+        }
+        try {
+          const area = document.createElement('textarea');
+          area.value = text;
+          area.style.position = 'fixed';
+          area.style.opacity = '0';
+          document.body.appendChild(area);
+          area.select();
+          document.execCommand('copy');
+          area.remove();
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
       function pluginLabel(id, pluginsById) {
         if (!id) return '内置 / 其它';
         const meta = pluginsById.get(id);
@@ -494,18 +573,38 @@
 
         const pluginsById = new Map(payload.plugins.map((plugin) => [plugin.id, plugin]));
         const query = state.query;
-        const visible = payload.tools.filter((tool) => matches(tool, query));
+        const keyOf = (tool) => tool.plugin ?? (tool.name.startsWith('mcp__') ? '__mcp__' : '');
+        const ownOnly = !state.showAll;
+        const matched = payload.tools.filter((tool) => matches(tool, query));
+        const visible = ownOnly
+          ? matched.filter((tool) => {
+              const key = keyOf(tool);
+              return key !== '' && key !== '__mcp__';
+            })
+          : matched;
         if (visible.length === 0) {
           const empty = document.createElement('div');
           empty.className = 'dsh-tp-empty';
-          empty.textContent = query ? '没有匹配的工具' : '运行时注册表暂时没有返回工具描述';
+          empty.textContent = query
+            ? ownOnly
+              ? '没有匹配的工具（内置 / MCP 的工具请点右上角「全部」）'
+              : '没有匹配的工具'
+            : ownOnly
+              ? '还没有自己装的插件注册工具（点右上角「全部」可看内置 / MCP）'
+              : '运行时注册表暂时没有返回工具描述';
           listEl.appendChild(empty);
           return;
+        }
+        if (countEl) {
+          const installed = [...new Set(visible.map((tool) => tool.plugin).filter(Boolean))];
+          countEl.textContent = ownOnly
+            ? `共 ${visible.length} 个工具 · ${installed.length} 个插件`
+            : `共 ${visible.length} 个工具 · ${installed.length} 个插件 · 含内置/MCP`;
         }
 
         const groups = new Map();
         for (const tool of visible) {
-          const key = tool.plugin ?? (tool.name.startsWith('mcp__') ? '__mcp__' : '');
+          const key = keyOf(tool);
           if (!groups.has(key)) groups.set(key, []);
           groups.get(key).push(tool);
         }
@@ -562,6 +661,35 @@
             group.appendChild(introEl);
           }
 
+          const sayList = typeof zhPlugin === 'object' && Array.isArray(zhPlugin?.say) ? zhPlugin.say : null;
+          if (sayList && sayList.length) {
+            const wrap = document.createElement('div');
+            wrap.className = 'dsh-tp-saywrap';
+            const label = document.createElement('span');
+            label.className = 'dsh-tp-saylabel';
+            label.textContent = '触发说法：';
+            wrap.appendChild(label);
+            for (const phrase of sayList) {
+              const chip = document.createElement('button');
+              chip.type = 'button';
+              chip.className = 'dsh-tp-saychip';
+              chip.textContent = `「${phrase}」`;
+              chip.title = '点击复制这句触发说法';
+              chip.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                await copyText(phrase);
+                chip.classList.add('done');
+                chip.textContent = '已复制';
+                setTimeout(() => {
+                  chip.textContent = `「${phrase}」`;
+                  chip.classList.remove('done');
+                }, 1000);
+              });
+              wrap.appendChild(chip);
+            }
+            group.appendChild(wrap);
+          }
+
           for (const tool of tools) {
             group.appendChild(renderItem(tool));
           }
@@ -615,6 +743,7 @@
         ensurePanel();
         try {
           state.pinned = localStorage.getItem(LS_PIN) === '1';
+          state.showAll = localStorage.getItem(LS_ALL) === '1';
           const rawPos = localStorage.getItem(LS_POS);
           if (rawPos) {
             const parsed = JSON.parse(rawPos);
@@ -622,9 +751,11 @@
           }
         } catch {
           state.pinned = false;
+          state.showAll = false;
           state.pos = null;
         }
         applyPinnedUI();
+        applyScopeUI();
 
         document.addEventListener('pointerdown', onOutsidePointer, true);
         document.addEventListener('keydown', onKeyDown, true);
