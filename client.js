@@ -16,6 +16,7 @@
   const DICT_ROUTE = '/plugins/dsh-trigger-prompts/zh-cn.json';
   const LS_PIN = 'dsh-trigger-prompts:pinned';
   const LS_LANG = 'dsh-trigger-prompts:lang';
+  const LS_POS = 'dsh-trigger-prompts:pos';
   const STALE_MS = 15 * 1000;
 
   window.__ModuleLoader__.load({
@@ -35,6 +36,7 @@
         payload: null,
         dict: null,
         lang: 'zh',
+        pos: null,
         fetchedAt: 0,
         query: '',
       };
@@ -156,6 +158,23 @@
           height: 22px; padding: 0 7px; border-radius: 6px; cursor: pointer; opacity: .75;
         }
         .dsh-tp-langbtn:hover { opacity: 1; background: color-mix(in srgb, CanvasText 10%, transparent); }
+        .dsh-tp-grip {
+          width: 16px; height: 22px; flex: none; margin-left: -4px;
+          display: inline-flex; align-items: center; justify-content: center;
+          cursor: grab; opacity: .4; font-size: 12px; letter-spacing: -2px;
+          user-select: none; touch-action: none; border-radius: 4px;
+        }
+        .dsh-tp-grip:hover { opacity: .85; background: color-mix(in srgb, CanvasText 10%, transparent); }
+        .dsh-tp-panel.dragging, .dsh-tp-panel.dragging .dsh-tp-grip { cursor: grabbing; }
+        .dsh-tp-panel.dragging { user-select: none; }
+        .dsh-tp-say {
+          margin-top: 5px; font-size: 12px; line-height: 1.5;
+          padding: 5px 8px; border-radius: 6px;
+          background: color-mix(in srgb, #4d9fff 14%, transparent);
+          border: 1px solid color-mix(in srgb, #4d9fff 28%, transparent);
+          white-space: pre-wrap; word-break: break-word;
+        }
+        .dsh-tp-say-label { font-weight: 600; margin-right: 4px; opacity: .95; }
         .dsh-tp-empty { padding: 18px 10px; text-align: center; opacity: .6; font-size: 12px; }
         .dsh-tp-foot {
           padding: 7px 12px; font-size: 11px; opacity: .55;
@@ -214,6 +233,69 @@
         const spacer = document.createElement('div');
         spacer.className = 'dsh-tp-spacer';
 
+        const grip = document.createElement('button');
+        grip.type = 'button';
+        grip.className = 'dsh-tp-grip';
+        grip.textContent = '⠿';
+        grip.title = '长按并拖动可移动面板；双击复位到按钮下方';
+        grip.setAttribute('aria-label', '拖动面板');
+        grip.addEventListener('dblclick', (event) => {
+          event.stopPropagation();
+          state.pos = null;
+          persistPos();
+          positionPanel();
+        });
+        grip.addEventListener('pointerdown', (event) => {
+          if (event.pointerType === 'mouse' && event.button !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const startX = event.clientX;
+          const startY = event.clientY;
+          const rect = panel.getBoundingClientRect();
+          const offsetX = startX - rect.left;
+          const offsetY = startY - rect.top;
+          let armed = false;
+          let stopped = false;
+          const armTimer = setTimeout(() => {
+            armed = true;
+            panel.classList.add('dragging');
+            try {
+              grip.setPointerCapture(event.pointerId);
+            } catch {
+              /* 忽略 */
+            }
+          }, 240);
+          const cleanup = () => {
+            clearTimeout(armTimer);
+            panel.classList.remove('dragging');
+            grip.removeEventListener('pointermove', onMove);
+            grip.removeEventListener('pointerup', onUp);
+            grip.removeEventListener('pointercancel', onUp);
+          };
+          const onMove = (moveEvent) => {
+            if (stopped) return;
+            if (!armed) {
+              // 长按期间手指/鼠标大幅移动 = 不是长按，取消
+              if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > 8) {
+                stopped = true;
+                cleanup();
+              }
+              return;
+            }
+            state.pos = { left: moveEvent.clientX - offsetX, top: moveEvent.clientY - offsetY };
+            positionPanel();
+          };
+          const onUp = () => {
+            if (stopped) return;
+            stopped = true;
+            cleanup();
+            if (armed) persistPos();
+          };
+          grip.addEventListener('pointermove', onMove);
+          grip.addEventListener('pointerup', onUp);
+          grip.addEventListener('pointercancel', onUp);
+        });
+
         pinBtn = document.createElement('button');
         pinBtn.type = 'button';
         pinBtn.className = 'dsh-tp-iconbtn';
@@ -258,7 +340,7 @@
           close();
         });
 
-        head.append(title, countEl, spacer, langBtn, pinBtn, refreshBtn, closeBtn);
+        head.append(grip, title, countEl, spacer, langBtn, pinBtn, refreshBtn, closeBtn);
 
         searchEl = document.createElement('input');
         searchEl.className = 'dsh-tp-search';
@@ -322,18 +404,35 @@
           : '当前显示英文原文，点击切换为中文注释';
       }
 
+      function persistPos() {
+        try {
+          if (state.pos) localStorage.setItem(LS_POS, JSON.stringify(state.pos));
+          else localStorage.removeItem(LS_POS);
+        } catch {
+          /* 忽略隐私模式 */
+        }
+      }
+
       function positionPanel() {
-        if (!panel || !btn || !state.open) return;
-        const rect = btn.getBoundingClientRect();
+        if (!panel || !state.open) return;
         const width = panel.offsetWidth || 420;
         const height = panel.offsetHeight || 400;
-        let left = rect.left;
-        if (left + width > window.innerWidth - 12) left = window.innerWidth - width - 12;
-        if (left < 12) left = 12;
-        let top = rect.bottom + 8;
-        if (top + height > window.innerHeight - 12) {
-          top = Math.max(12, window.innerHeight - height - 12);
+        let left;
+        let top;
+        if (state.pos && Number.isFinite(state.pos.left) && Number.isFinite(state.pos.top)) {
+          left = state.pos.left;
+          top = state.pos.top;
+        } else if (btn) {
+          const rect = btn.getBoundingClientRect();
+          left = rect.left;
+          top = rect.bottom + 8;
+        } else {
+          left = 24;
+          top = 80;
         }
+        // 夹在视口内：窗口变小或分辨率变化时不会把面板丢到屏幕外
+        left = Math.min(Math.max(8, left), Math.max(8, window.innerWidth - width - 8));
+        top = Math.min(Math.max(8, top), Math.max(8, window.innerHeight - height - 8));
         panel.style.left = `${Math.round(left)}px`;
         panel.style.top = `${Math.round(top)}px`;
       }
@@ -585,11 +684,26 @@
 
         head.append(name, copy);
 
-        const zh = state.lang === 'zh' ? state.dict?.tools?.[tool.name] : null;
+        const entry = state.lang === 'zh' ? state.dict?.tools?.[tool.name] : null;
+        const zh = typeof entry === 'string' ? entry : entry?.zh ?? null;
+        const say = entry && typeof entry === 'object' && typeof entry.say === 'string' ? entry.say : null;
         if (zh) {
           const zhEl = document.createElement('div');
           zhEl.className = 'dsh-tp-zh';
           zhEl.textContent = zh;
+
+          const extras = [];
+          if (say) {
+            const sayEl = document.createElement('div');
+            sayEl.className = 'dsh-tp-say';
+            const label = document.createElement('span');
+            label.className = 'dsh-tp-say-label';
+            label.textContent = '你可以说：';
+            const text = document.createElement('span');
+            text.textContent = say;
+            sayEl.append(label, text);
+            extras.push(sayEl);
+          }
 
           const origHead = document.createElement('div');
           origHead.className = 'dsh-tp-orig-toggle';
@@ -607,7 +721,7 @@
           origHead.addEventListener('click', toggle);
           desc.addEventListener('click', toggle);
 
-          item.append(head, zhEl, origHead, desc);
+          item.append(head, zhEl, ...extras, origHead, desc);
         } else {
           const desc = document.createElement('div');
           desc.className = 'dsh-tp-desc';
@@ -643,9 +757,15 @@
         try {
           state.pinned = localStorage.getItem(LS_PIN) === '1';
           state.lang = localStorage.getItem(LS_LANG) === 'en' ? 'en' : 'zh';
+          const rawPos = localStorage.getItem(LS_POS);
+          if (rawPos) {
+            const parsed = JSON.parse(rawPos);
+            if (parsed && Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) state.pos = parsed;
+          }
         } catch {
           state.pinned = false;
           state.lang = 'zh';
+          state.pos = null;
         }
         applyPinnedUI();
         applyLangUI();
