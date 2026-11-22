@@ -99,8 +99,12 @@
           display: flex; align-items: baseline; gap: 6px; padding: 4px 4px 6px;
           font-size: 11px; text-transform: none; opacity: .72;
         }
+        .dsh-tp-grouphead.clickable { cursor: pointer; user-select: none; }
+        .dsh-tp-grouphead.clickable:hover { opacity: 1; }
         .dsh-tp-grouphead b { font-size: 12px; font-weight: 600; opacity: .95; }
         .dsh-tp-grouphead span { opacity: .8; }
+        .dsh-tp-grouphead .dsh-tp-caret2 { font-size: 9px; opacity: .7; }
+        .dsh-tp-group.collapsed .dsh-tp-item { display: none; }
         .dsh-tp-item {
           border: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
           border-radius: 8px; padding: 8px 10px; margin: 0 0 6px;
@@ -361,6 +365,12 @@
         return meta.version ? `${id} · v${meta.version}` : id;
       }
 
+      function groupLabel(key, pluginsById) {
+        if (key === '') return '内置 / 其它';
+        if (key === '__mcp__') return 'MCP 外部工具';
+        return pluginLabel(key, pluginsById);
+      }
+
       function copyText(text) {
         if (navigator.clipboard?.writeText) {
           return navigator.clipboard.writeText(text).catch(() => legacyCopy(text));
@@ -423,14 +433,13 @@
 
         const groups = new Map();
         for (const tool of visible) {
-          const key = tool.plugin ?? '';
+          const key = tool.plugin ?? (tool.name.startsWith('mcp__') ? '__mcp__' : '');
           if (!groups.has(key)) groups.set(key, []);
           groups.get(key).push(tool);
         }
+        const rank = (key) => (key === '' ? 2 : key === '__mcp__' ? 1 : 0);
         const order = [...groups.keys()].sort((a, b) => {
-          if (a === b) return 0;
-          if (a === '') return 1;
-          if (b === '') return -1;
+          if (rank(a) !== rank(b)) return rank(a) - rank(b);
           return a.localeCompare(b);
         });
 
@@ -442,10 +451,25 @@
           const head = document.createElement('div');
           head.className = 'dsh-tp-grouphead';
           const strong = document.createElement('b');
-          strong.textContent = pluginLabel(key, pluginsById);
+          strong.textContent = groupLabel(key, pluginsById);
           const span = document.createElement('span');
           span.textContent = `${tools.length} 个工具`;
           head.append(strong, span);
+
+          // 内置 / MCP 这类大组默认折叠，避免几十上百条淹没插件工具
+          const foldable = rank(key) > 0 && tools.length > 12 && !state.query;
+          if (foldable) {
+            group.classList.add('collapsed');
+            head.classList.add('clickable');
+            const caret2 = document.createElement('span');
+            caret2.className = 'dsh-tp-caret2';
+            caret2.textContent = '▸';
+            head.prepend(caret2);
+            head.addEventListener('click', () => {
+              const collapsed = group.classList.toggle('collapsed');
+              caret2.textContent = collapsed ? '▸' : '▾';
+            });
+          }
           group.appendChild(head);
 
           for (const tool of tools) {
