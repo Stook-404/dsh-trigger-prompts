@@ -17,6 +17,8 @@
   const LS_PIN = 'dsh-trigger-prompts:pinned';
   const LS_POS = 'dsh-trigger-prompts:pos';
   const LS_ALL = 'dsh-trigger-prompts:showAll';
+  const LS_THEME = 'dsh-trigger-prompts:theme';
+  const DEFAULT_THEME = { bg: '#dce9f7', alpha: 0.92 };
   const STALE_MS = 15 * 1000;
 
   window.__ModuleLoader__.load({
@@ -37,6 +39,7 @@
         dict: null,
         pos: null,
         showAll: false,
+        theme: null,
         fetchedAt: 0,
         query: '',
       };
@@ -48,6 +51,11 @@
       let searchEl = null;
       let pinBtn = null;
       let scopeBtn = null;
+      let settingsBtn = null;
+      let settingsEl = null;
+      let colorInput = null;
+      let alphaInput = null;
+      let alphaLabel = null;
       let refreshBtn = null;
       let positionRaf = 0;
       let observer = null;
@@ -56,51 +64,60 @@
       const css = `
         .dsh-tp-btn {
           margin-left: 10px; padding: 3px 10px; border-radius: 999px;
-          border: 1px solid color-mix(in srgb, CanvasText 22%, transparent);
+          border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
           background: transparent; color: inherit; font: inherit; font-size: 12px;
           line-height: 18px; cursor: pointer; display: inline-flex; align-items: center;
           gap: 4px; opacity: .78; transition: opacity .15s, background .15s;
           white-space: nowrap; flex: none;
         }
-        .dsh-tp-btn:hover { opacity: 1; background: color-mix(in srgb, CanvasText 8%, transparent); }
-        .dsh-tp-btn[aria-expanded="true"] { opacity: 1; border-color: color-mix(in srgb, CanvasText 40%, transparent); }
+        .dsh-tp-btn:hover { opacity: 1; background: color-mix(in srgb, currentColor 8%, transparent); }
+        .dsh-tp-btn[aria-expanded="true"] { opacity: 1; border-color: color-mix(in srgb, currentColor 40%, transparent); }
         .dsh-tp-caret { font-size: 9px; opacity: .7; }
 
         .dsh-tp-panel {
-          position: fixed; z-index: 2147483000; width: min(420px, calc(100vw - 24px));
+          position: fixed; z-index: 2147483000; width: min(446px, calc(100vw - 24px));
           max-height: min(72vh, 580px); display: flex; flex-direction: column;
-          background: Canvas; color: CanvasText; border-radius: 12px;
-          border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+          background: var(--tp-bg, rgba(220, 233, 247, .92));
+          color: var(--tp-fg, #16233a);
+          border-radius: 12px;
+          border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
           box-shadow: 0 18px 48px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.2);
           font-size: 13px; overflow: hidden;
         }
         .dsh-tp-head {
           display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-          border-bottom: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+          border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
         }
-        .dsh-tp-title { font-weight: 600; font-size: 13px; }
-        .dsh-tp-count { font-size: 11px; opacity: .6; }
-        .dsh-tp-spacer { flex: 1 1 auto; }
+        .dsh-tp-title { font-weight: 600; font-size: 13px; white-space: nowrap; flex: none; }
+        .dsh-tp-count {
+          font-size: 11px; opacity: .6; flex: 1 1 auto; min-width: 0;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .dsh-tp-spacer { flex: 0 0 0; }
         .dsh-tp-iconbtn {
           border: 1px solid transparent; background: transparent; color: inherit;
           width: 24px; height: 24px; border-radius: 6px; cursor: pointer;
           display: inline-flex; align-items: center; justify-content: center;
           font-size: 13px; opacity: .65; padding: 0;
         }
-        .dsh-tp-iconbtn:hover { opacity: 1; background: color-mix(in srgb, CanvasText 10%, transparent); }
+        .dsh-tp-iconbtn:hover { opacity: 1; background: color-mix(in srgb, currentColor 10%, transparent); }
         .dsh-tp-iconbtn[aria-pressed="true"] {
-          opacity: 1; background: color-mix(in srgb, CanvasText 16%, transparent);
-          border-color: color-mix(in srgb, CanvasText 30%, transparent);
+          opacity: 1; background: color-mix(in srgb, currentColor 16%, transparent);
+          border-color: color-mix(in srgb, currentColor 30%, transparent);
         }
         .dsh-tp-search {
           margin: 8px 12px 0; padding: 5px 8px; font: inherit; font-size: 12px;
-          border-radius: 6px; color: inherit; background: color-mix(in srgb, CanvasText 6%, transparent);
-          border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+          border-radius: 6px; color: inherit; background: color-mix(in srgb, currentColor 6%, transparent);
+          border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
           outline: none;
         }
-        .dsh-tp-search:focus { border-color: color-mix(in srgb, CanvasText 34%, transparent); }
+        .dsh-tp-search:focus { border-color: color-mix(in srgb, currentColor 34%, transparent); }
         .dsh-tp-body { overflow: auto; padding: 8px 8px 12px; }
-        .dsh-tp-group { margin-top: 8px; }
+        .dsh-tp-group {
+          margin: 10px 0 0; padding: 10px 10px 4px; border-radius: 12px;
+          border: 1px solid color-mix(in srgb, currentColor 13%, transparent);
+          background: color-mix(in srgb, currentColor 5%, transparent);
+        }
         .dsh-tp-group:first-child { margin-top: 2px; }
         .dsh-tp-grouphead {
           display: flex; align-items: baseline; gap: 6px; padding: 4px 4px 6px;
@@ -113,9 +130,9 @@
         .dsh-tp-grouphead .dsh-tp-caret2 { font-size: 9px; opacity: .7; }
         .dsh-tp-group.collapsed .dsh-tp-item { display: none; }
         .dsh-tp-item {
-          border: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+          border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
           border-radius: 8px; padding: 8px 10px; margin: 0 0 6px;
-          background: color-mix(in srgb, CanvasText 4%, transparent);
+          background: color-mix(in srgb, currentColor 4%, transparent);
         }
         .dsh-tp-itemhead { display: flex; align-items: center; gap: 6px; }
         .dsh-tp-name {
@@ -138,22 +155,27 @@
           cursor: grab; opacity: .4; font-size: 12px; letter-spacing: -2px;
           user-select: none; touch-action: none; border-radius: 4px;
         }
-        .dsh-tp-grip:hover { opacity: .85; background: color-mix(in srgb, CanvasText 10%, transparent); }
+        .dsh-tp-grip:hover { opacity: .85; background: color-mix(in srgb, currentColor 10%, transparent); }
         .dsh-tp-panel.dragging, .dsh-tp-panel.dragging .dsh-tp-grip { cursor: grabbing; }
         .dsh-tp-panel.dragging { user-select: none; }
         .dsh-tp-empty { padding: 18px 10px; text-align: center; opacity: .6; font-size: 12px; }
         .dsh-tp-scopebtn {
           flex: none; height: 22px; padding: 0 8px; border-radius: 11px;
-          border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+          border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
           background: transparent; color: inherit; cursor: pointer;
           font-size: 11px; opacity: .8; font-family: inherit; white-space: nowrap;
         }
-        .dsh-tp-scopebtn:hover { opacity: 1; background: color-mix(in srgb, CanvasText 8%, transparent); }
+        .dsh-tp-scopebtn:hover { opacity: 1; background: color-mix(in srgb, currentColor 8%, transparent); }
         .dsh-tp-scopebtn[aria-pressed="true"] {
           opacity: 1; border-color: transparent;
           background: color-mix(in srgb, #4d9fff 24%, transparent);
         }
-        .dsh-tp-saywrap { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 2px 10px; align-items: center; }
+        .dsh-tp-saywrap {
+          display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+          margin: 0 0 10px; padding: 7px 9px; border-radius: 9px;
+          border: 1px dashed color-mix(in srgb, #4d9fff 45%, transparent);
+          background: color-mix(in srgb, #4d9fff 9%, transparent);
+        }
         .dsh-tp-saylabel { font-size: 11.5px; opacity: .75; }
         .dsh-tp-saychip {
           font-size: 12px; line-height: 1.5; padding: 3px 8px; border-radius: 999px;
@@ -164,6 +186,33 @@
         }
         .dsh-tp-saychip:hover { background: color-mix(in srgb, #4d9fff 26%, transparent); }
         .dsh-tp-saychip.done { background: color-mix(in srgb, #4caf50 30%, transparent); border-color: color-mix(in srgb, #4caf50 45%, transparent); }
+        .dsh-tp-settings {
+          margin: 8px 12px 0; padding: 10px; border-radius: 10px;
+          border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+          background: color-mix(in srgb, currentColor 6%, transparent);
+        }
+        .dsh-tp-settings[hidden] { display: none; }
+        .dsh-tp-setrow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+        .dsh-tp-setrow:last-child { margin-bottom: 0; }
+        .dsh-tp-setlabel { font-size: 11.5px; opacity: .8; min-width: 48px; }
+        .dsh-tp-color {
+          width: 34px; height: 22px; padding: 0; border-radius: 5px; cursor: pointer;
+          border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+          background: transparent;
+        }
+        .dsh-tp-swatch {
+          width: 18px; height: 18px; border-radius: 50%; cursor: pointer; padding: 0;
+          border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+        }
+        .dsh-tp-swatch:hover { transform: scale(1.12); }
+        .dsh-tp-range { flex: 1 1 90px; min-width: 80px; accent-color: #4d9fff; }
+        .dsh-tp-setval { font-size: 11px; opacity: .75; min-width: 34px; text-align: right; }
+        .dsh-tp-reset {
+          font-size: 11px; padding: 3px 9px; border-radius: 6px; cursor: pointer;
+          font-family: inherit; color: inherit; background: transparent;
+          border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+        }
+        .dsh-tp-reset:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
       `;
 
       function injectStyles(doc) {
@@ -324,7 +373,19 @@
           close();
         });
 
-        head.append(grip, title, countEl, spacer, scopeBtn, pinBtn, refreshBtn, closeBtn);
+        settingsBtn = document.createElement('button');
+        settingsBtn.type = 'button';
+        settingsBtn.className = 'dsh-tp-iconbtn';
+        settingsBtn.title = '设置面板外观（背景色 / 透明度）';
+        settingsBtn.setAttribute('aria-label', '设置');
+        settingsBtn.setAttribute('aria-pressed', 'false');
+        settingsBtn.textContent = '⚙';
+        settingsBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          toggleSettings();
+        });
+
+        head.append(grip, title, countEl, spacer, settingsBtn, scopeBtn, pinBtn, refreshBtn, closeBtn);
 
         searchEl = document.createElement('input');
         searchEl.className = 'dsh-tp-search';
@@ -341,10 +402,73 @@
         listEl = document.createElement('div');
         listEl.className = 'dsh-tp-body';
 
-        panel.append(head, searchEl, listEl);
+        settingsEl = document.createElement('div');
+        settingsEl.className = 'dsh-tp-settings';
+        settingsEl.setAttribute('hidden', '');
+
+        const bgRow = document.createElement('div');
+        bgRow.className = 'dsh-tp-setrow';
+        const bgLabel = document.createElement('span');
+        bgLabel.className = 'dsh-tp-setlabel';
+        bgLabel.textContent = '背景色';
+        colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.className = 'dsh-tp-color';
+        colorInput.title = '选一个背景色';
+        colorInput.addEventListener('input', () => saveTheme({ bg: colorInput.value }));
+        bgRow.append(bgLabel, colorInput);
+        for (const swatch of ['#dce9f7', '#e6f2e2', '#f1e7f7', '#fbf1d6', '#1f2430']) {
+          const dot = document.createElement('button');
+          dot.type = 'button';
+          dot.className = 'dsh-tp-swatch';
+          dot.style.background = swatch;
+          dot.title = swatch;
+          dot.setAttribute('aria-label', `背景色 ${swatch}`);
+          dot.addEventListener('click', (event) => {
+            event.stopPropagation();
+            saveTheme({ bg: swatch });
+          });
+          bgRow.appendChild(dot);
+        }
+
+        const alphaRow = document.createElement('div');
+        alphaRow.className = 'dsh-tp-setrow';
+        const alphaTitle = document.createElement('span');
+        alphaTitle.className = 'dsh-tp-setlabel';
+        alphaTitle.textContent = '透明度';
+        alphaInput = document.createElement('input');
+        alphaInput.type = 'range';
+        alphaInput.min = '35';
+        alphaInput.max = '100';
+        alphaInput.step = '1';
+        alphaInput.className = 'dsh-tp-range';
+        alphaInput.title = '面板背景的不透明度';
+        alphaLabel = document.createElement('span');
+        alphaLabel.className = 'dsh-tp-setval';
+        alphaInput.addEventListener('input', () => {
+          saveTheme({ alpha: Number(alphaInput.value) / 100 });
+        });
+        alphaRow.append(alphaTitle, alphaInput, alphaLabel);
+
+        const resetRow = document.createElement('div');
+        resetRow.className = 'dsh-tp-setrow';
+        const resetBtn = document.createElement('button');
+        resetBtn.type = 'button';
+        resetBtn.className = 'dsh-tp-reset';
+        resetBtn.textContent = '恢复默认（浅蓝）';
+        resetBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          resetTheme();
+        });
+        resetRow.append(resetBtn);
+
+        settingsEl.append(bgRow, alphaRow, resetRow);
+
+        panel.append(head, searchEl, settingsEl, listEl);
         panel.addEventListener('pointerdown', (event) => event.stopPropagation());
         document.body.appendChild(panel);
         applyPinnedUI();
+        applyTheme();
         return panel;
       }
 
@@ -383,6 +507,63 @@
         applyScopeUI();
         renderList();
         schedulePosition();
+      }
+
+      function hexToRgba(hex, alpha) {
+        const match = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? ''));
+        if (!match) return `rgba(220, 233, 247, ${alpha})`;
+        const int = parseInt(match[1], 16);
+        return `rgba(${(int >> 16) & 255}, ${(int >> 8) & 255}, ${int & 255}, ${alpha})`;
+      }
+
+      // 相对亮度：亮背景配深字，暗背景配浅字
+      function relLuminance(hex) {
+        const match = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? ''));
+        if (!match) return 0.9;
+        const int = parseInt(match[1], 16);
+        const channel = (value) => {
+          const c = value / 255;
+          return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        };
+        return (
+          0.2126 * channel((int >> 16) & 255) +
+          0.7152 * channel((int >> 8) & 255) +
+          0.0722 * channel(int & 255)
+        );
+      }
+
+      function applyTheme() {
+        const theme = state.theme ?? DEFAULT_THEME;
+        if (panel) {
+          panel.style.setProperty('--tp-bg', hexToRgba(theme.bg, theme.alpha));
+          panel.style.setProperty('--tp-fg', relLuminance(theme.bg) > 0.45 ? '#16233a' : '#eef4ff');
+        }
+        if (colorInput) colorInput.value = theme.bg;
+        if (alphaInput) alphaInput.value = String(Math.round(theme.alpha * 100));
+        if (alphaLabel) alphaLabel.textContent = `${Math.round(theme.alpha * 100)}%`;
+      }
+
+      function saveTheme(patch) {
+        const next = { ...(state.theme ?? DEFAULT_THEME), ...patch };
+        state.theme = next;
+        try {
+          localStorage.setItem(LS_THEME, JSON.stringify(next));
+        } catch {
+          /* 忽略隐私模式 */
+        }
+        applyTheme();
+      }
+
+      function resetTheme() {
+        saveTheme({ ...DEFAULT_THEME });
+      }
+
+      function toggleSettings(force) {
+        if (!settingsEl) return;
+        const show = typeof force === 'boolean' ? force : settingsEl.hasAttribute('hidden');
+        if (show) settingsEl.removeAttribute('hidden');
+        else settingsEl.setAttribute('hidden', '');
+        settingsBtn?.setAttribute('aria-pressed', show ? 'true' : 'false');
       }
 
       function persistPos() {
@@ -456,10 +637,13 @@
       }
 
       function onKeyDown(event) {
-        if (event.key === 'Escape' && state.open) {
-          event.stopPropagation();
-          close();
+        if (event.key !== 'Escape' || !state.open) return;
+        event.stopPropagation();
+        if (settingsEl && !settingsEl.hasAttribute('hidden')) {
+          toggleSettings(false);
+          return;
         }
+        close();
       }
 
       async function load(force) {
@@ -744,6 +928,13 @@
         try {
           state.pinned = localStorage.getItem(LS_PIN) === '1';
           state.showAll = localStorage.getItem(LS_ALL) === '1';
+          const rawTheme = localStorage.getItem(LS_THEME);
+          if (rawTheme) {
+            const parsedTheme = JSON.parse(rawTheme);
+            if (parsedTheme && typeof parsedTheme.bg === 'string' && Number.isFinite(parsedTheme.alpha)) {
+              state.theme = parsedTheme;
+            }
+          }
           const rawPos = localStorage.getItem(LS_POS);
           if (rawPos) {
             const parsed = JSON.parse(rawPos);
@@ -753,9 +944,11 @@
           state.pinned = false;
           state.showAll = false;
           state.pos = null;
+          state.theme = null;
         }
         applyPinnedUI();
         applyScopeUI();
+        applyTheme();
 
         document.addEventListener('pointerdown', onOutsidePointer, true);
         document.addEventListener('keydown', onKeyDown, true);
