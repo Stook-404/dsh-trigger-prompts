@@ -1,0 +1,4 @@
+# dsh bundle patch：把「触发提示词」面板挂到宿主（服务端汇总工具描述 + 客户端按钮）
+- insert:
+    - id: trigger-prompts
+      name: dsh-trigger-prompts
