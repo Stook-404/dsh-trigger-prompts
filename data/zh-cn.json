@@ -1,6 +1,6 @@
 {
-  "note": "中文使用说明：plugins = 每个插件的简介 + 触发说法（say）；tools = 每个工具一句话用途。仅用于面板展示，不改变模型看到的原始英文描述。新增插件/工具时在这里补条目即可（欢迎 PR）。",
-  "updatedAt": "2026-11-22",
+  "note": "中文使用说明：plugins = 每个插件的简介 + 触发说法（say）；skills = 每个技能的中文短名 + 触发说法（say）；tools = 每个工具一句话用途。仅用于面板展示，不改变模型看到的原始英文描述。新增插件 / 技能 / 工具时在这里补条目即可（欢迎 PR）。",
+  "updatedAt": "2026-11-25",
   "plugins": {
     "@nanmicoder/dsh-agent-teams": {
       "name": "智能体团队",
@@ -66,6 +66,112 @@
     "builtin": {
       "name": "内置 / 其它",
       "intro": "DSH 自带的基础工具：读写文件、跑命令、检索代码、定时任务等。日常几乎都会用到，一般不需要特意触发，模型会自己挑合适的。"
+    }
+  },
+  "skills": {
+    "design-taste-frontend": {
+      "name": "前端品味建站",
+      "say": [
+        "搭一个像 figma.com 那样的公司官网",
+        "做个产品落地页，别要模板感",
+        "这首页太有 AI 味了，重做",
+        "hero 加个入场动效，再来一两个记忆点",
+        "这页用 shader 会不会太花"
+      ]
+    },
+    "impeccable": {
+      "name": "界面设计总管",
+      "say": [
+        "帮我设计一版这个界面",
+        "把这个页面 critique 一下",
+        "polish 一下这个控件",
+        "审计一下这页有没有可访问性问题",
+        "把现有界面重构成更清楚的层级"
+      ]
+    },
+    "chart-type-chooser": {
+      "name": "图表选型",
+      "say": [
+        "这份数据该画什么图",
+        "先别画，告诉我哪种图表能说清这个结论",
+        "这几个候选图表哪个更合适"
+      ]
+    },
+    "nature-figure-production": {
+      "name": "期刊级配图",
+      "say": [
+        "做一张 Nature 风格的图",
+        "把这张图调成投稿级样式",
+        "多面板拼图加独立图例"
+      ]
+    },
+    "scientific-plotting": {
+      "name": "科研绘图模板",
+      "say": [
+        "画一张出版级折线图",
+        "用 NJLnotes.py 那种风格画图",
+        "画个 contourf 相图或热图"
+      ]
+    },
+    "math-modeling-solver": {
+      "name": "数模解题",
+      "say": [
+        "这题用国赛思路怎么建模",
+        "CVaR 和 NSGA-II 哪个更合适",
+        "写一段蒙特卡洛求解代码"
+      ]
+    },
+    "math-modeling-paper": {
+      "name": "数模论文",
+      "say": [
+        "把结果写成国赛论文",
+        "按美赛格式写摘要和 Memo",
+        "帮我检查论文的模型检验部分"
+      ]
+    },
+    "office-docx": {
+      "name": "Word 文档",
+      "say": [
+        "生成一份 Word 报告",
+        "改一下这个 docx 的表格样式"
+      ]
+    },
+    "office-pptx": {
+      "name": "PPT",
+      "say": [
+        "做一份 PPT",
+        "把这个 pptx 的排版改好看"
+      ]
+    },
+    "office-xlsx": {
+      "name": "Excel 表格",
+      "say": [
+        "整理成 Excel",
+        "给这个 xlsx 加公式和格式"
+      ]
+    },
+    "ppt-master": {
+      "name": "演示文稿工作流",
+      "say": [
+        "按品牌模板生成一套幻灯片",
+        "把这份报告做成可编辑 PPTX",
+        "给每页加旁白"
+      ]
+    },
+    "reverse-engineer-anything": {
+      "name": "逆向分析",
+      "say": [
+        "用 REA 分析这个二进制",
+        "把这个 Electron 应用拆开看看",
+        "对比这两个版本的差异"
+      ]
+    },
+    "diagnose-windows-sandbox-acl": {
+      "name": "沙箱 ACL 诊断",
+      "say": [
+        "工作区写不进去，帮我查 ACL",
+        "这个路径读不了，看看权限"
+      ]
     }
   },
   "tools": {
