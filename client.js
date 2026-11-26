@@ -20,6 +20,7 @@
   const LS_ALL = 'dsh-trigger-prompts:showAll';
   const LS_THEME = 'dsh-trigger-prompts:theme';
   const LS_SECTIONS = 'dsh-trigger-prompts:sections';
+  const LS_CATS = 'dsh-trigger-prompts:cats';
   const LS_BTN = 'dsh-trigger-prompts:btnpos';
   const DEFAULT_THEME = { bg: '#dce9f7', alpha: 0.92 };
   const STALE_MS = 15 * 1000;
@@ -49,6 +50,11 @@
         expanded: new Set(),
         btnOffset: null,
         btnAlign: '',
+        cats: { plugins: { order: [], assign: {} }, skills: { order: [], assign: {} } },
+        catFilter: { plugins: '', skills: '' },
+        catDraft: null,
+        catDraftText: '',
+        catPicker: null,
       };
 
       let btn = null;
@@ -57,6 +63,7 @@
       let countEl = null;
       let searchEl = null;
       let filtersEl = null;
+      let catsEl = null;
       const filterBtns = {};
       let pinBtn = null;
       let scopeBtn = null;
@@ -448,6 +455,67 @@
           color: inherit; background: var(--tp-card-2); border: 1px solid var(--tp-line-strong);
         }
         .dsh-tp-reset:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+
+        /* ── 分类盒子 ── */
+        .dsh-tp-cats {
+          display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+          padding: 0 14px 10px;
+        }
+        .dsh-tp-cats[hidden] { display: none; }
+        .dsh-tp-catslabel {
+          font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+          color: var(--tp-muted); margin-right: 2px;
+        }
+        .dsh-tp-cat {
+          display: inline-flex; align-items: center; gap: 5px; font: inherit;
+          padding: 3px 9px; border-radius: 8px; cursor: pointer;
+          font-size: 11.5px; line-height: 1.5; color: inherit;
+          border: 1px solid var(--tp-line-strong); background: var(--tp-card);
+          transition: background .12s, border-color .12s;
+        }
+        .dsh-tp-cat:hover { background: var(--tp-card-2); }
+        .dsh-tp-cat.is-active {
+          border-color: color-mix(in srgb, var(--tp-accent) 70%, transparent);
+          background: color-mix(in srgb, var(--tp-accent) 18%, transparent);
+          font-weight: 600;
+        }
+        .dsh-tp-catcount {
+          font-size: 10px; font-variant-numeric: tabular-nums;
+          color: var(--tp-muted); min-width: 9px; text-align: center;
+        }
+        .dsh-tp-cat.is-active .dsh-tp-catcount { color: inherit; opacity: .72; }
+        .dsh-tp-catadd { border-style: dashed; color: var(--tp-muted); }
+        .dsh-tp-catadd:hover { color: inherit; border-style: dashed; }
+        .dsh-tp-catinput {
+          width: 96px; padding: 3px 8px; border-radius: 8px; font: inherit; font-size: 11.5px;
+          color: inherit; background: var(--tp-card-2); outline: none;
+          border: 1px solid color-mix(in srgb, var(--tp-accent) 60%, transparent);
+        }
+
+        /* 卡片上的分类芯片 */
+        .dsh-tp-catchip {
+          flex: none; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+          font: inherit; font-size: 10.5px; line-height: 1.7; cursor: pointer;
+          color: var(--tp-muted); background: transparent;
+          border: 1px dashed var(--tp-line-strong);
+          max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .dsh-tp-catchip:hover { color: inherit; border-style: solid; }
+
+        /* 卡片内展开的分类选择行 */
+        .dsh-tp-catpicker {
+          display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+          padding: 2px 12px 8px 44px; font-size: 11px; color: var(--tp-muted);
+        }
+        .dsh-tp-catopt {
+          padding: 2px 8px; border-radius: 7px; cursor: pointer; font: inherit; font-size: 11px;
+          color: inherit; background: var(--tp-card); border: 1px solid var(--tp-line-strong);
+        }
+        .dsh-tp-catopt:hover { background: var(--tp-card-2); }
+        .dsh-tp-catopt.is-current {
+          border-color: color-mix(in srgb, var(--tp-accent) 65%, transparent);
+          background: color-mix(in srgb, var(--tp-accent) 16%, transparent); font-weight: 600;
+        }
 
         /* ── 空状态 / 抓手 ── */
         .dsh-tp-empty {
@@ -912,7 +980,12 @@
         searchIcon.className = 'dsh-tp-searchicon';
         searchIcon.setAttribute('aria-hidden', 'true');
         searchWrap.append(searchIcon, searchEl);
-        panel.append(head, searchWrap, filtersEl, settingsEl, listEl);
+        catsEl = document.createElement('div');
+        catsEl.className = 'dsh-tp-cats';
+        catsEl.setAttribute('hidden', '');
+        catsEl.addEventListener('pointerdown', (event) => event.stopPropagation());
+
+        panel.append(head, searchWrap, filtersEl, catsEl, settingsEl, listEl);
         panel.addEventListener('pointerdown', (event) => event.stopPropagation());
         document.body.appendChild(panel);
         applyPinnedUI();
@@ -1351,8 +1424,260 @@
         return wrap;
       }
 
+      const DEFAULT_CAT = '默认';
+
+      function catBucket(kind) {
+        if (!state.cats[kind]) state.cats[kind] = { order: [], assign: {} };
+        return state.cats[kind];
+      }
+
+      function catNames(kind) {
+        return [DEFAULT_CAT, ...catBucket(kind).order];
+      }
+
+      function catOf(kind, id) {
+        const bucket = catBucket(kind);
+        const assigned = bucket.assign[id];
+        return assigned && bucket.order.includes(assigned) ? assigned : DEFAULT_CAT;
+      }
+
+      /** 只看当前可见的那一节；隐藏的那节不参与筛选，免得筛了个看不见的类别。 */
+      function activeCatFilter(kind) {
+        if (!state.sections.includes(kind)) return '';
+        return state.catFilter[kind] ?? '';
+      }
+
+      function persistCats() {
+        try {
+          localStorage.setItem(LS_CATS, JSON.stringify(state.cats));
+        } catch {
+          /* 忽略：存不下也不影响这一次的面板 */
+        }
+      }
+
+      function loadCats() {
+        state.cats = { plugins: { order: [], assign: {} }, skills: { order: [], assign: {} } };
+        state.catFilter = { plugins: '', skills: '' };
+        try {
+          const raw = localStorage.getItem(LS_CATS);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          for (const kind of ['plugins', 'skills']) {
+            const bucket = parsed?.[kind] ?? {};
+            const order = Array.isArray(bucket.order) ? bucket.order : [];
+            const assign = bucket.assign && typeof bucket.assign === 'object' ? bucket.assign : {};
+            state.cats[kind] = {
+              order: order
+                .filter((name) => typeof name === 'string' && name.trim() && name.trim() !== DEFAULT_CAT)
+                .map((name) => name.trim()),
+              assign: Object.fromEntries(
+                Object.entries(assign)
+                  .filter(([, value]) => typeof value === 'string' && value.trim() && value.trim() !== DEFAULT_CAT)
+                  .map(([id, value]) => [id, value.trim()]),
+              ),
+            };
+          }
+        } catch {
+          state.cats = { plugins: { order: [], assign: {} }, skills: { order: [], assign: {} } };
+        }
+      }
+
+      /** 分类的统计口径：插件按「会出现在面板里的插件」，技能按注册表里的全部技能。 */
+      function catUniverse(kind) {
+        const payload = state.payload;
+        if (!payload) return [];
+        if (kind === 'skills') return (payload.skills ?? []).map((skill) => skill.name);
+        const ids = [];
+        for (const plugin of payload.plugins ?? []) {
+          if (plugin.count > 0 && !ids.includes(plugin.id)) ids.push(plugin.id);
+        }
+        if (state.showAll) {
+          for (const tool of payload.tools ?? []) {
+            if (tool.plugin) continue;
+            const key = tool.name.startsWith('mcp__') ? '__mcp__' : '';
+            if (!ids.includes(key)) ids.push(key);
+          }
+        }
+        return ids;
+      }
+
+      function catCounts(kind) {
+        const counts = {};
+        for (const name of catNames(kind)) counts[name] = 0;
+        for (const id of catUniverse(kind)) {
+          const name = catOf(kind, id);
+          counts[name] = (counts[name] ?? 0) + 1;
+        }
+        return counts;
+      }
+
+      function addCat(kind, rawName) {
+        const name = String(rawName ?? '').trim().replace(/\s+/g, ' ');
+        if (!name || name === DEFAULT_CAT) return false;
+        const bucket = catBucket(kind);
+        if (bucket.order.includes(name)) return false;
+        bucket.order.push(name);
+        persistCats();
+        return true;
+      }
+
+      function assignCat(kind, id, name) {
+        const bucket = catBucket(kind);
+        if (name === DEFAULT_CAT) delete bucket.assign[id];
+        else if (bucket.order.includes(name)) bucket.assign[id] = name;
+        persistCats();
+      }
+
+      function toggleCat(kind, name) {
+        state.catFilter[kind] = state.catFilter[kind] === name ? '' : name;
+        renderList();
+      }
+
+      function toggleCatPicker(kind, id) {
+        const current = state.catPicker;
+        const same = current && current.kind === kind && current.id === id;
+        state.catPicker = same ? null : { kind, id };
+        renderList();
+      }
+
+      function buildCatChip(kind, id) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'dsh-tp-catchip';
+        chip.textContent = catOf(kind, id);
+        chip.title = '设置分类（当前：' + catOf(kind, id) + '）';
+        chip.addEventListener('click', (event) => {
+          event.stopPropagation();
+          toggleCatPicker(kind, id);
+        });
+        return chip;
+      }
+
+      function buildCatPicker(kind, id) {
+        const current = state.catPicker;
+        if (!current || current.kind !== kind || current.id !== id) return null;
+        const row = document.createElement('div');
+        row.className = 'dsh-tp-catpicker';
+        row.appendChild(mkSpan('', '分到：'));
+        for (const name of catNames(kind)) {
+          const option = document.createElement('button');
+          option.type = 'button';
+          option.className = name === catOf(kind, id) ? 'dsh-tp-catopt is-current' : 'dsh-tp-catopt';
+          option.textContent = name;
+          option.addEventListener('click', (event) => {
+            event.stopPropagation();
+            assignCat(kind, id, name);
+            state.catPicker = null;
+            renderList();
+          });
+          row.appendChild(option);
+        }
+        return row;
+      }
+
+      function renderCats() {
+        if (!catsEl) return;
+        if (!state.payload) {
+          catsEl.setAttribute('hidden', '');
+          return;
+        }
+        const kinds = ['plugins', 'skills'].filter((kind) => state.sections.includes(kind));
+        if (kinds.length === 0) {
+          catsEl.setAttribute('hidden', '');
+          return;
+        }
+        catsEl.removeAttribute('hidden');
+        catsEl.replaceChildren();
+        catsEl.appendChild(mkSpan('dsh-tp-catslabel', '分类'));
+        const both = kinds.length > 1;
+        let focusInput = null;
+
+        for (const kind of kinds) {
+          const counts = catCounts(kind);
+          const prefix = both ? (kind === 'plugins' ? '(插件) ' : '(skill) ') : '';
+          const kindLabel = kind === 'plugins' ? '插件' : '技能';
+          for (const name of catNames(kind)) {
+            const active = activeCatFilter(kind) === name;
+            const cell = document.createElement('button');
+            cell.type = 'button';
+            cell.className = active ? 'dsh-tp-cat is-active' : 'dsh-tp-cat';
+            cell.setAttribute('aria-pressed', active ? 'true' : 'false');
+            cell.title =
+              kindLabel + '分类「' + name + '」· ' + (counts[name] ?? 0) + ' 个' + (active ? '（再点一次取消筛选）' : '（点一下只看这一类）');
+            cell.append(
+              mkSpan('dsh-tp-catname', prefix + name),
+              mkSpan('dsh-tp-catcount', String(counts[name] ?? 0)),
+            );
+            cell.addEventListener('click', (event) => {
+              event.stopPropagation();
+              toggleCat(kind, name);
+            });
+            catsEl.appendChild(cell);
+          }
+
+          if (state.catDraft === kind) {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'dsh-tp-catinput';
+            input.placeholder = '分类名，回车确认';
+            input.value = state.catDraftText ?? '';
+            const commit = () => {
+              const text = input.value;
+              state.catDraft = null;
+              state.catDraftText = '';
+              addCat(kind, text);
+              renderList();
+            };
+            const cancel = () => {
+              state.catDraft = null;
+              state.catDraftText = '';
+              renderList();
+            };
+            input.addEventListener('input', () => {
+              state.catDraftText = input.value;
+            });
+            input.addEventListener('keydown', (event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                commit();
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                cancel();
+              }
+            });
+            input.addEventListener('blur', () => {
+              if (state.catDraft === kind) cancel();
+            });
+            focusInput = input;
+            catsEl.appendChild(input);
+          } else {
+            const add = document.createElement('button');
+            add.type = 'button';
+            add.className = 'dsh-tp-cat dsh-tp-catadd';
+            add.textContent = '＋ 新分类';
+            add.title = '新建一个' + kindLabel + '分类格子';
+            add.addEventListener('click', (event) => {
+              event.stopPropagation();
+              state.catDraft = kind;
+              state.catDraftText = '';
+              renderList();
+            });
+            catsEl.appendChild(add);
+          }
+        }
+
+        if (focusInput) {
+          try {
+            focusInput.focus();
+          } catch {
+            /* 桩环境没有 focus 也无所谓 */
+          }
+        }
+      }
+
       function renderList() {
         if (!listEl) return;
+        renderCats();
         const payload = state.payload;
         const skills = Array.isArray(payload?.skills) ? payload.skills : [];
         listEl.replaceChildren();
@@ -1398,11 +1723,17 @@
           }
         }
         const rank = (key) => (key === '' ? 2 : key === '__mcp__' ? 1 : 0);
-        const order = [...groups.keys()].sort((a, b) => {
+        let order = [...groups.keys()].sort((a, b) => {
           if (rank(a) !== rank(b)) return rank(a) - rank(b);
           return a.localeCompare(b);
         });
-        const visibleSkills = skills.filter((skill) => matchesSkill(skill, query));
+        if (activeCatFilter('plugins')) {
+          order = order.filter((key) => catOf('plugins', key) === activeCatFilter('plugins'));
+        }
+        let visibleSkills = skills.filter((skill) => matchesSkill(skill, query));
+        if (activeCatFilter('skills')) {
+          visibleSkills = visibleSkills.filter((skill) => catOf('skills', skill.name) === activeCatFilter('skills'));
+        }
         let totalTools = 0;
         for (const list of groups.values()) totalTools += list.length;
 
@@ -1420,7 +1751,10 @@
         const wantSkills = state.sections.includes('skills') && visibleSkills.length > 0;
         if (!wantPlugins && !wantSkills) {
           let text;
-          if (query) {
+          const catActive = activeCatFilter('plugins') || activeCatFilter('skills');
+          if (catActive) {
+            text = '「' + catActive + '」分类下还没有条目（再点一下分类格子可取消筛选）';
+          } else if (query) {
             text = '没有匹配的插件或技能' + (ownOnly ? '（内置 / MCP 的工具请点右上角「全部」）' : '');
           } else if (ownOnly) {
             text = '还没有自己装的插件注册工具，也没有发现技能（点右上角「全部」可看内置 / MCP）';
@@ -1475,6 +1809,8 @@
         headText.appendChild(sub);
         head.appendChild(headText);
 
+        if (key !== '' && key !== '__mcp__') head.appendChild(buildCatChip('plugins', key));
+
         const expanded = state.expanded.has(key);
         const expandBtn = document.createElement('button');
         expandBtn.type = 'button';
@@ -1488,6 +1824,9 @@
         });
         head.appendChild(expandBtn);
         group.appendChild(head);
+
+        const pluginCatPicker = buildCatPicker('plugins', key);
+        if (pluginCatPicker) group.appendChild(pluginCatPicker);
 
         const intro = typeof zhPlugin === 'object' && zhPlugin ? zhPlugin.intro : null;
         if (intro) {
@@ -1569,6 +1908,7 @@
         const zhSkill = state.dict?.skills?.[skill.name];
         const zhName = typeof zhSkill === 'string' ? zhSkill : zhSkill?.name;
         if (zhName) head.appendChild(mkSpan('dsh-tp-zhplugin dsh-tp-zhname', zhName));
+        head.appendChild(buildCatChip('skills', skill.name));
 
         const invocation = skill.invocation ?? {};
         if (invocation.modelInvocable === false) {
@@ -1582,6 +1922,9 @@
           head.appendChild(badge);
         }
         item.appendChild(head);
+
+        const skillCatPicker = buildCatPicker('skills', skill.name);
+        if (skillCatPicker) item.appendChild(skillCatPicker);
 
         const desc = document.createElement('div');
         desc.className = 'dsh-tp-zh';
@@ -1664,6 +2007,7 @@
           state.pinned = localStorage.getItem(LS_PIN) === '1';
           state.showAll = localStorage.getItem(LS_ALL) === '1';
           state.sections = normalizeSections(localStorage.getItem(LS_SECTIONS));
+          loadCats();
           const rawTheme = localStorage.getItem(LS_THEME);
           if (rawTheme) {
             const parsedTheme = JSON.parse(rawTheme);
@@ -1687,6 +2031,8 @@
           state.pinned = false;
           state.showAll = false;
           state.sections = ['plugins', 'skills'];
+          state.cats = { plugins: { order: [], assign: {} }, skills: { order: [], assign: {} } };
+          state.catFilter = { plugins: '', skills: '' };
           state.pos = null;
           state.theme = null;
           state.btnOffset = null;

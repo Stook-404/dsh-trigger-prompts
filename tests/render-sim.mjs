@@ -400,6 +400,94 @@ search.value = '';
 search.dispatch('input', { target: search });
 await sleep(120);
 
+/* ── 分类盒子 ── */
+const inside = (root, name) => walk(root).filter((el) => (el.className || '').split(/\s+/).includes(name));
+const catsBox = byClass('dsh-tp-cats')[0];
+assert.ok(catsBox, '分类盒子应存在');
+assert.equal(catsBox.hasAttribute('hidden'), false, '有数据时分类盒应显示');
+
+const catCells = () => inside(catsBox, 'dsh-tp-cat').filter((el) => !el.classList.contains('dsh-tp-catadd'));
+const cellName = (el) => inside(el, 'dsh-tp-catname')[0]?.textContent ?? '';
+const cellCount = (el) => inside(el, 'dsh-tp-catcount')[0]?.textContent ?? '';
+
+/* 两组同时亮着 → 两端各一个「默认」格，名字前带 (插件) / (skill) */
+assert.equal(catCells().length, 2, '两节各一个默认格，实际：' + catCells().map(cellName).join('|'));
+assert.equal(cellName(catCells()[0]), '(插件) 默认', '插件格名前缀');
+assert.equal(cellName(catCells()[1]), '(skill) 默认', '技能格名前缀');
+assert.equal(cellCount(catCells()[0]), '2', '两个插件都默认归到「默认」');
+assert.equal(cellCount(catCells()[1]), '2', '两个技能都默认归到「默认」');
+assert.equal(inside(catsBox, 'dsh-tp-catadd').length, 2, '每节一个「新建分类」按钮');
+
+/* 新建插件分类 */
+inside(catsBox, 'dsh-tp-catadd')[0].dispatch('click');
+await sleep(40);
+const draftInput = inside(catsBox, 'dsh-tp-catinput')[0];
+assert.ok(draftInput, '点新建后应出现命名输入框');
+draftInput.value = '工作';
+draftInput.dispatch('input', { target: draftInput });
+draftInput.dispatch('keydown', { key: 'Enter', target: draftInput });
+await sleep(40);
+
+let names = catCells().map(cellName);
+assert.ok(names.includes('(插件) 工作'), '插件侧应多出「工作」格：' + names.join('|'));
+assert.ok(!names.includes('(skill) 工作'), '插件分类不能出现在技能侧');
+assert.deepEqual(JSON.parse(windowStub.localStorage.getItem('dsh-trigger-prompts:cats')).plugins.order, ['工作'], '分类应落盘');
+
+/* 给插件选分类：卡片上的芯片 → 卡片内展开选择行 */
+const pluginCardOf = () => byClass('dsh-tp-group').find((el) => el.textContent.includes('智能体团队'));
+assert.ok(pluginCardOf(), '应能找到插件卡');
+const chip = inside(pluginCardOf(), 'dsh-tp-catchip')[0];
+assert.ok(chip, '插件卡上应有分类芯片');
+assert.equal(chip.textContent, '默认', '没有分类时芯片显示「默认」');
+chip.dispatch('click');
+await sleep(40);
+const picker = inside(pluginCardOf(), 'dsh-tp-catpicker')[0];
+assert.ok(picker, '点芯片应在卡片里展开分类选择行');
+const workOpt = inside(picker, 'dsh-tp-catopt').find((el) => el.textContent === '工作');
+assert.ok(workOpt, '选择行里应有刚建的「工作」');
+workOpt.dispatch('click');
+await sleep(40);
+assert.equal(inside(pluginCardOf(), 'dsh-tp-catchip')[0].textContent, '工作', '选完后芯片应显示新分类');
+assert.equal(byClass('dsh-tp-catpicker').length, 0, '选完应收起选择行');
+names = catCells().map((el) => cellName(el) + ':' + cellCount(el));
+assert.ok(names.includes('(插件) 工作:1'), '工作格计数应为 1：' + names.join('|'));
+assert.ok(names.includes('(插件) 默认:1'), '默认格应剩 1 个：' + names.join('|'));
+
+/* 点分类格 = 只看这一类 */
+catCells().find((el) => cellName(el) === '(插件) 工作').dispatch('click');
+await sleep(40);
+assert.ok(catCells().find((el) => cellName(el) === '(插件) 工作').classList.contains('is-active'), '选中的格子应高亮');
+assert.ok(listText().textContent.includes('智能体团队'), '工作分类里的插件应留下');
+assert.ok(!listText().textContent.includes('视觉理解'), '其它插件应被筛掉');
+assert.ok(listText().textContent.includes('impeccable'), '技能不受插件分类筛选影响');
+
+/* 再点一次取消筛选 */
+catCells().find((el) => cellName(el) === '(插件) 工作').dispatch('click');
+await sleep(40);
+assert.ok(listText().textContent.includes('视觉理解'), '再点一次应取消筛选');
+
+/* 技能分类独立 */
+inside(catsBox, 'dsh-tp-catadd')[1].dispatch('click');
+await sleep(40);
+const skillDraft = inside(catsBox, 'dsh-tp-catinput')[0];
+assert.ok(skillDraft, '技能侧也应能新建');
+skillDraft.value = '研究';
+skillDraft.dispatch('keydown', { key: 'Enter', target: skillDraft });
+await sleep(40);
+names = catCells().map(cellName);
+assert.ok(names.includes('(skill) 研究'), '技能侧应多出「研究」格：' + names.join('|'));
+assert.ok(!names.includes('(插件) 研究'), '技能分类不能跑到插件侧');
+
+/* 只剩一节亮着 → 不加前缀 */
+pluginBtn.dispatch('click');
+await sleep(40);
+const soloNames = catCells().map(cellName);
+assert.ok(soloNames.every((name) => !name.startsWith('(')), '只剩一节时不加前缀：' + soloNames.join('|'));
+assert.ok(soloNames.includes('默认') && soloNames.includes('研究'), '只剩技能格：' + soloNames.join('|'));
+pluginBtn.dispatch('click');
+await sleep(40);
+assert.equal(catCells().length, 4, '插件回来后共 4 个格子（插件 默认/工作 + 技能 默认/研究）：' + catCells().map(cellName).join('|'));
+
 /* ── 页签对齐 ── */
 assert.equal(btn.style.height, '30px', '按钮高度应跟原生页签一致');
 assert.equal(btn.style.marginLeft, '6px', '按钮间距应跟页签行 gap 一致');
