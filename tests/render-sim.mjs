@@ -216,13 +216,22 @@ const payload = {
       path: 'D:\\skills\\impeccable\\SKILL.md',
     },
     {
-      name: 'nature-polishing',
+      name: 'nature-writing',
       description:
-        'Polish, translate, or tighten existing academic prose. Use for 论文润色、学术翻译、正文精简, or manuscript LaTeX layout fixes.',
+        'Draft new manuscript sections. Use for 写引言、写讨论、改写摘要, or rebuilding the argument.',
       invocation: { modelInvocable: true, userInvocable: true },
       source: 'project',
       provider: 'filesystem',
-      path: 'D:\\skills\\nature-polishing\\SKILL.md',
+      path: 'D:\\skills\\nature-writing\\SKILL.md',
+    },
+    {
+      name: 'nature-shared',
+      description:
+        'Internal shared-reference support package for installed Nature Skills. Do not invoke it as a standalone user workflow.',
+      invocation: { modelInvocable: true, userInvocable: true },
+      source: 'project',
+      provider: 'filesystem',
+      path: 'D:\\skills\\nature-shared\\SKILL.md',
     },
   ],
   skillsComplete: true,
@@ -346,11 +355,11 @@ assert.ok(listText().textContent.includes('帮我设计一版这个界面'), '�
 assert.ok(listText().textContent.includes('触发说法 · 自动'), '缺字典条目时应显示「触发说法 · 自动」');
 const sayChipTexts = byClass('dsh-tp-saychip').map((el) => el.textContent);
 assert.ok(
-  sayChipTexts.some((text) => text.includes('论文润色')),
+  sayChipTexts.some((text) => text.includes('写引言')),
   '应从 description 的「Use for …」里抄出说法：' + sayChipTexts.join('|'),
 );
 assert.ok(
-  sayChipTexts.some((text) => text.includes('学术翻译')) && sayChipTexts.some((text) => text.includes('正文精简')),
+  sayChipTexts.some((text) => text.includes('写讨论')) && sayChipTexts.some((text) => text.includes('改写摘要')),
   '同一句里的多个说法都要提出来：' + sayChipTexts.join('|'),
 );
 assert.ok(
@@ -359,6 +368,17 @@ assert.ok(
 );
 const autoChips = byClass('dsh-tp-saychip').filter((el) => el.style && el.style.borderStyle === 'dashed');
 assert.ok(autoChips.length >= 3, '自动提取的胶囊应是虚线边框：' + autoChips.length);
+
+/* 描述里写明「不要单独调用」的内部包：标记 + 不硬凑说法 */
+const internalBadge = byClass('dsh-tp-badge-internal');
+assert.equal(internalBadge.length, 1, '应只有一个「内部共享」徽章，实际：' + internalBadge.length);
+assert.equal(internalBadge[0].textContent, '内部共享');
+assert.ok(
+  listText().textContent.includes('Nature 共享包'),
+  '内部包也应显示字典里的中文短名（新增字典条目后）',
+);
+const autoLabels = byClass('dsh-tp-saylabel').filter((el) => el.textContent.includes('自动'));
+assert.equal(autoLabels.length, 1, '内部包不应有「触发说法 · 自动」，实际：' + autoLabels.length);
 const order0 = order(list);
 if (process.env.DEBUG_ORDER) console.log('order0:', JSON.stringify(order0));
 const pluginsIdx = order0.findIndex((text) => text.includes('智能体团队'));
@@ -434,7 +454,7 @@ assert.equal(catCells().length, 2, '两节各一个默认格，实际：' + catC
 assert.equal(cellName(catCells()[0]), '(插件) 默认', '插件格名前缀');
 assert.equal(cellName(catCells()[1]), '(skill) 默认', '技能格名前缀');
 assert.equal(cellCount(catCells()[0]), '2', '两个插件都默认归到「默认」');
-assert.equal(cellCount(catCells()[1]), '2', '两个技能都默认归到「默认」');
+assert.equal(cellCount(catCells()[1]), '3', '三个技能都默认归到「默认」');
 assert.equal(inside(catsBox, 'dsh-tp-catadd').length, 2, '每节一个「新建分类」按钮');
 
 /* 新建插件分类 */

@@ -1928,6 +1928,16 @@
         return group;
       }
 
+      /** 描述里明确说「别单独调用」的内部包（例如 nature-shared）：给它打标记，不硬凑触发说法。 */
+      function isInternalPackage(skill) {
+        const text = [skill?.description, skill?.whenToUse]
+          .filter((value) => typeof value === 'string')
+          .join('\n');
+        return /(do not invoke|not intended to be invoked|standalone user workflow|internal (?:shared|reference|support)|内部共享|不独立调用)/i.test(
+          text,
+        );
+      }
+
       function buildSkillItem(skill) {
         const item = document.createElement('div');
         item.className = 'dsh-tp-skill';
@@ -1968,8 +1978,16 @@
         desc.textContent = typeof skill.description === 'string' ? skill.description : '';
         item.appendChild(desc);
 
+        const internalPackage = isInternalPackage(skill);
+        if (internalPackage) {
+          const badge = mkSpan('dsh-tp-badge dsh-tp-badge-internal', '内部共享');
+          badge.title = '不是给你直接调的：同一套件的其它技能会自己加载它，所以没有触发说法';
+          head.appendChild(badge);
+        }
+
         const dictSay = typeof zhSkill === 'object' && zhSkill && Array.isArray(zhSkill.say) ? zhSkill.say : null;
-        const autoSay = dictSay && dictSay.length ? null : deriveSay(skill);
+        const autoSay =
+          internalPackage || (dictSay && dictSay.length) ? null : deriveSay(skill);
         const chips = buildSayChips(dictSay && dictSay.length ? dictSay : autoSay, !(dictSay && dictSay.length));
         if (chips) item.appendChild(chips);
 
