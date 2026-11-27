@@ -1305,12 +1305,46 @@
         }
       }
 
+      /**
+       * 没有手工字典条目时的兜底：从 description / whenToUse 里抽触发说法。
+       * 技能包没有「触发说法」这个字段（frontmatter 只允许 name/description/whenToUse/metadata/invocation），
+       * 所以只能从描述里的「触发词：」「Use for …」「such as …」这类片段里抄。
+       */
+      function deriveSay(skill) {
+        const text = [
+          typeof skill?.description === 'string' ? skill.description : '',
+          typeof skill?.whenToUse === 'string' ? skill.whenToUse : '',
+        ].join('\n');
+        if (!text.trim()) return null;
+        const out = [];
+        const push = (raw) => {
+          const phrase = String(raw ?? '')
+            .replace(/^[\s、，,；;:：.。]+|[\s、，,；;:：.。]+$/g, '')
+            .replace(/^and\s+/i, '')
+            .trim();
+          if (phrase.length < 2 || phrase.length > 26) return;
+          if (!/[\u3400-\u9fff]/.test(phrase) && !/[a-zA-Z]{3,}/.test(phrase)) return;
+          if (out.some((x) => x.toLowerCase() === phrase.toLowerCase())) return;
+          if (out.length < 4) out.push(phrase);
+        };
+        const splitList = (value) => String(value).split(/[、，,；;]|\s+(?:and|or)\s+/i).forEach(push);
+
+        const tagged = text.match(/触发词\s*[:：]\s*([^\n]+)/);
+        if (tagged) splitList(tagged[1]);
+
+        for (const hit of text.matchAll(/(?:use for|use when|such as|适用于|用于)\s*([^\n.。;；]{2,200})/gi)) {
+          splitList(hit[1]);
+        }
+        return out.length ? out.slice(0, 4) : null;
+      }
+
       function matchesSkill(skill, query) {
         if (!query) return true;
         const zh = state.dict?.skills?.[skill.name];
         const zhText = [
           typeof zh === 'string' ? zh : zh?.name ?? '',
           Array.isArray(zh?.say) ? zh.say.join('\n') : '',
+          (deriveSay(skill) ?? []).join('\n'),
         ].join('\n');
         const haystack = [
           skill.name,
@@ -1398,17 +1432,20 @@
       }
 
       /** 一排可点击复制的「触发说法」胶囊；没有就返回 null。 */
-      function buildSayChips(sayList) {
+      function buildSayChips(sayList, derived) {
         if (!Array.isArray(sayList) || sayList.length === 0) return null;
         const wrap = document.createElement('div');
         wrap.className = 'dsh-tp-saywrap';
-        wrap.appendChild(mkSpan('dsh-tp-saylabel', '触发说法'));
+        const sayLabel = mkSpan('dsh-tp-saylabel', derived ? '触发说法 · 自动' : '触发说法');
+        if (derived) sayLabel.title = '没在 data/zh-cn.json 里配过，这几句是从 description 里自动抄的';
+        wrap.appendChild(sayLabel);
         for (const phrase of sayList) {
           const chip = document.createElement('button');
           chip.type = 'button';
           chip.className = 'dsh-tp-saychip';
           chip.textContent = '「' + phrase + '」';
-          chip.title = '点击复制这句触发说法';
+          chip.title = derived ? '点击复制（自动从 description 提取，可能不准）' : '点击复制这句触发说法';
+          if (derived) chip.style.borderStyle = 'dashed';
           chip.addEventListener('click', async (event) => {
             event.stopPropagation();
             await copyText(phrase);
@@ -1931,7 +1968,9 @@
         desc.textContent = typeof skill.description === 'string' ? skill.description : '';
         item.appendChild(desc);
 
-        const chips = buildSayChips(typeof zhSkill === 'object' && zhSkill ? zhSkill.say : null);
+        const dictSay = typeof zhSkill === 'object' && zhSkill && Array.isArray(zhSkill.say) ? zhSkill.say : null;
+        const autoSay = dictSay && dictSay.length ? null : deriveSay(skill);
+        const chips = buildSayChips(dictSay && dictSay.length ? dictSay : autoSay, !(dictSay && dictSay.length));
         if (chips) item.appendChild(chips);
 
         if (typeof skill.whenToUse === 'string' && skill.whenToUse.trim()) {

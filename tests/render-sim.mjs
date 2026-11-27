@@ -216,12 +216,13 @@ const payload = {
       path: 'D:\\skills\\impeccable\\SKILL.md',
     },
     {
-      name: 'design-taste-frontend',
-      description: 'Anti-slop frontend skill for company websites.',
+      name: 'nature-polishing',
+      description:
+        'Polish, translate, or tighten existing academic prose. Use for 论文润色、学术翻译、正文精简, or manuscript LaTeX layout fixes.',
       invocation: { modelInvocable: true, userInvocable: true },
       source: 'project',
       provider: 'filesystem',
-      path: 'D:\\skills\\design-taste-frontend\\SKILL.md',
+      path: 'D:\\skills\\nature-polishing\\SKILL.md',
     },
   ],
   skillsComplete: true,
@@ -340,6 +341,24 @@ assert.ok(!listText().textContent.includes('agent_teams_create'), '收起后工�
 /* 技能节 */
 assert.ok(listText().textContent.includes('impeccable'), '技能应列出');
 assert.ok(listText().textContent.includes('帮我设计一版这个界面'), '技能触发说法应出现');
+
+/* 字典里没配过的新技能：自动从 description 提取触发说法 */
+assert.ok(listText().textContent.includes('触发说法 · 自动'), '缺字典条目时应显示「触发说法 · 自动」');
+const sayChipTexts = byClass('dsh-tp-saychip').map((el) => el.textContent);
+assert.ok(
+  sayChipTexts.some((text) => text.includes('论文润色')),
+  '应从 description 的「Use for …」里抄出说法：' + sayChipTexts.join('|'),
+);
+assert.ok(
+  sayChipTexts.some((text) => text.includes('学术翻译')) && sayChipTexts.some((text) => text.includes('正文精简')),
+  '同一句里的多个说法都要提出来：' + sayChipTexts.join('|'),
+);
+assert.ok(
+  !sayChipTexts.some((text) => /触发词/.test(text)),
+  '不该把「触发词：」这个标签本身当说法：' + sayChipTexts.join('|'),
+);
+const autoChips = byClass('dsh-tp-saychip').filter((el) => el.style && el.style.borderStyle === 'dashed');
+assert.ok(autoChips.length >= 3, '自动提取的胶囊应是虚线边框：' + autoChips.length);
 const order0 = order(list);
 if (process.env.DEBUG_ORDER) console.log('order0:', JSON.stringify(order0));
 const pluginsIdx = order0.findIndex((text) => text.includes('智能体团队'));
